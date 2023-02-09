@@ -29,7 +29,8 @@
     "prepare": "npm run build",
     "prebuild": "npm run clean",
     "prepublishOnly": "npm run validate && npm run build",
-    "validate": "npm run typecheck && npm run lint && npm run format"
+    "validate": "npm run typecheck && npm run lint && npm run format",
+    "market-maker": "ts-node ts/client/src/scripts/mm/market-maker.ts"
   },
   "devDependencies": {
     "@tsconfig/recommended": "^1.0.1",
