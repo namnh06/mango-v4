@@ -6,7 +6,7 @@
   "assets": {
     "BTC": {
       "perp": {
-        "equity": 5,
+        "equity": 20,
         "sizePerc": 1,
         "bidCharge": 0.01,
         "askCharge": 0.01,
