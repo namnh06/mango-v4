@@ -1,7 +1,11 @@
 #!/bin/bash
 . .env
 
-if [ $1 == "--mm" ]
+if [ $1 == "--wick" ]
 then
-    yarn market-maker
+    yarn wick
+elif [ $1 == "--wash" ]
+then
+    yarn wash
 fi
+

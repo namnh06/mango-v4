@@ -30,7 +30,9 @@
     "prebuild": "npm run clean",
     "prepublishOnly": "npm run validate && npm run build",
     "validate": "npm run typecheck && npm run lint && npm run format",
-    "market-maker": "ts-node ts/client/src/scripts/mm/market-maker.ts"
+    "market-maker": "ts-node ts/client/src/scripts/mm/market-maker.ts",
+    "wick": "ts-node ts/client/src/scripts/mm/wick.ts",
+    "wash": "ts-node ts/client/src/scripts/mm/wash.ts"
   },
   "devDependencies": {
     "@tsconfig/recommended": "^1.0.1",

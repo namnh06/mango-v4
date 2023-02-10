@@ -1,0 +1,12 @@
+{
+    "interval": 30000,
+    "batch": 6,
+    "assets": {
+        "BTC": {
+            "perp": {
+                "charge": 0.005,
+                "krakenCode": "XXBTZUSD"
+            }
+        }
+    }
+}

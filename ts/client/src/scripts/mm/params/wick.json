@@ -1,0 +1,17 @@
+{
+  "interval": 10000,
+  "batch": 1,
+  "tif": 45,
+  "assets": {
+    "BTC": {
+      "perp": {
+        "equity": 60,
+        "sizePerc": 1,
+        "bidCharge": 0.01,
+        "askCharge": 0.01,
+        "requoteThresh": 0.002,
+        "krakenCode": "XXBTZUSD"
+      }
+    }
+  }
+}
