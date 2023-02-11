@@ -405,7 +405,7 @@ async function makeMarketUpdateInstructions(
         undefined,
         Date.now(),
         PerpOrderType.immediateOrCancel,
-        false,
+        true,
       );
 
       message += `\nSelling ...`;
@@ -430,7 +430,7 @@ async function makeMarketUpdateInstructions(
         undefined,
         Date.now(),
         PerpOrderType.immediateOrCancel,
-        false,
+        true,
       );
 
       message += `\nBuying ...`;
