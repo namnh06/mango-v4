@@ -356,6 +356,7 @@ async function makeMarketUpdateInstructions(
     return [];
   }
   const fairValue: number = (aggBid + aggAsk) / 2;
+  message += `\nfairValue: ${fairValue}`;
 
   const basePos = mangoAccount.perpPositionExistsForMarket(mc.perpMarket)
     ? mangoAccount.getPerpPositionUi(group, perpMarketIndex, true)
@@ -364,8 +365,6 @@ async function makeMarketUpdateInstructions(
   if (basePos !== 0) {
     const bids = mc.bids;
     const asks = mc.asks;
-    const bestBid = bids.best();
-    const bestAsk = asks.best();
 
     // Start building the transaction
     const instructions: TransactionInstruction[] = [
@@ -381,201 +380,69 @@ async function makeMarketUpdateInstructions(
       await client.healthRegionBeginIx(group, mangoAccount, [], [perpMarket]),
     );
 
-    // TODO: Continue here
     const charge: number = (mc.params.charge || 0.002);
     if (charge >= 0.01) {
       console.warn(`DO NOTHING DUE TO CHARGE >= 1%`);
       return [];
     }
-  }
-  // TODO: DELETE BELOW!
 
-  let bidCharge = (mc.params.bidCharge || 0.05);
-  let askCharge = (mc.params.askCharge || 0.05);
-
-  const equity = mc.params.equity;
-  const quoteSize = equity;
-  const size = quoteSize / fairValue;
-
-  let bidPrice = fairValue * (1 - bidCharge); // uiBidPrice
-  let askPrice = fairValue * (1 + askCharge); // uiAskPrice
-
-  // Re-calculate Order Price if too volatility
-  if (bidPrice > aggBid) {
-    bidPrice = aggBid * (1 - bidCharge);
-  }
-  if (askPrice < aggAsk) {
-    askPrice = aggAsk * (1 + askCharge);
-  }
-
-  let bidSize = size;
-  let askSize = size;
-  if (basePos !== 0) {
+    // base > 0 => positive => need sell
     if (basePos > 0) {
-      bidSize -= basePos;
-    } else {
-      askSize += basePos;
-    }
-  }
+      const bidAcceptablePrice = fairValue * (1 - charge);
+      // 100 * (1 - 0.002) = 99.8
+      const modelBidPrice = perpMarket.uiPriceToLots(bidAcceptablePrice);
+      const takerSize: number = basePos;
+      const nativeBidSize = perpMarket.uiBaseToLots(takerSize);
 
-  const nativeBidSize = perpMarket.uiBaseToLots(size);
-  const nativeAskSize = perpMarket.uiBaseToLots(size);
 
-  const bids = mc.bids;
-  const asks = mc.asks;
-  const bestBid = bids.best();
-  const bestAsk = asks.best();
+      const placeAskIx = await client.perpPlaceOrderIx(
+        group,
+        mangoAccount,
+        perpMarketIndex,
+        PerpOrderSide.ask,
+        perpMarket.priceLotsToUi(modelBidPrice),
+        perpMarket.baseLotsToUi(nativeBidSize),
+        undefined,
+        Date.now(),
+        PerpOrderType.immediateOrCancel,
+        false,
+      );
 
-  const modelBidPrice = perpMarket.uiPriceToLots(bidPrice);
-  const modelAskPrice = perpMarket.uiPriceToLots(askPrice);
-  const bookAdjBid =
-    bestAsk !== undefined
-      ? BN.min(bestAsk.priceLots.sub(new BN(1)), modelBidPrice)
-      : modelBidPrice;
-  const bookAdjAsk =
-    bestBid !== undefined
-      ? BN.max(bestBid.priceLots.add(new BN(1)), modelAskPrice)
-      : modelAskPrice;
+      message += `\nSelling ...`;
+      message += `\nWash Trade - IOC selling for size: ${takerSize}, at price: ${bidAcceptablePrice} `;
 
-  const requoteThresh = mc.params.requoteThresh;
-  let moveOrders = false;
+      console.log(message);
+      instructions.push(placeAskIx);
+    } else if (basePos < 0) {
+      const askAcceptablePrice = fairValue * (1 + charge);
+      const modelAskPrice = perpMarket.uiPriceToLots(askAcceptablePrice);
+      const takerSize: number = Math.abs(basePos);
+      const nativeAskSize = perpMarket.uiBaseToLots(takerSize);
 
-  if (mc.lastBookUpdate >= mc.lastOrderUpdate + 3) {
-    // if mango book was updated recently, then MangoAccount was also updated
-    const openOrders = await mangoAccount.loadPerpOpenOrdersForMarket(
-      client,
-      group,
-      perpMarketIndex,
-    );
 
-    if (bidSize <= 0 || askSize <= 0) {
-      moveOrders = openOrders.length < 1 || openOrders.length >= 2;
-    } else {
-      moveOrders = openOrders.length < 2 || openOrders.length > 2;
-    }
+      const placeBidIx = await client.perpPlaceOrderIx(
+        group,
+        mangoAccount,
+        perpMarketIndex,
+        PerpOrderSide.bid,
+        perpMarket.priceLotsToUi(modelAskPrice),
+        perpMarket.baseLotsToUi(nativeAskSize),
+        undefined,
+        Date.now(),
+        PerpOrderType.immediateOrCancel,
+        false,
+      );
 
-    for (const o of openOrders) {
-      const refPrice = o.side === 'buy' ? bookAdjBid : bookAdjAsk;
-      moveOrders =
-        moveOrders ||
-        Math.abs(o.priceLots.toNumber() / refPrice.toNumber() - 1) > requoteThresh ||
-        (mc.params.tif !== undefined && mc.lastOrderUpdate + mc.params.tif < getUnixTs());
-    }
-  } else {
-    // If order was updated before MangoAccount, then assume that sent order already executed
-    moveOrders =
-      moveOrders ||
-      Math.abs(mc.sentBidPrice / bookAdjBid.toNumber() - 1) >
-      requoteThresh ||
-      Math.abs(mc.sentAskPrice / bookAdjAsk.toNumber() - 1) >
-      requoteThresh ||
-      (mc.params.tif !== undefined && mc.lastOrderUpdate + mc.params.tif < getUnixTs());
-  }
+      message += `\nBuying ...`;
+      message += `\nWash Trade - IOC buying for size: ${takerSize}, at price: ${askAcceptablePrice}`;
 
-  // Start building the transaction
-  const instructions: TransactionInstruction[] = [
-    makeCheckAndSetSequenceNumberIx(
-      mc.sequenceAccount,
-      (client.program.provider as AnchorProvider).wallet.publicKey,
-      Date.now(),
-      CLUSTER,
-    ),
-  ];
-
-  instructions.push(
-    await client.healthRegionBeginIx(group, mangoAccount, [], [perpMarket]),
-  );
-
-  const expiryTimestamp =
-    params.tif !== undefined ? Date.now() / 1000 + params.tif : 0;
-
-  if (moveOrders) {
-    const placeBidIx = await client.perpPlaceOrderIx(
-      group,
-      mangoAccount,
-      perpMarketIndex,
-      PerpOrderSide.bid,
-      perpMarket.priceLotsToUi(bookAdjBid),
-      perpMarket.baseLotsToUi(nativeBidSize),
-      undefined,
-      Date.now(),
-      PerpOrderType.postOnlySlide,
-      false,
-      expiryTimestamp,
-      20,
-    );
-
-    const placeAskIx = await client.perpPlaceOrderIx(
-      group,
-      mangoAccount,
-      perpMarketIndex,
-      PerpOrderSide.ask,
-      perpMarket.priceLotsToUi(bookAdjAsk),
-      perpMarket.baseLotsToUi(nativeAskSize),
-      undefined,
-      Date.now(),
-      PerpOrderType.postOnlySlide,
-      false,
-      expiryTimestamp,
-      20,
-    );
-
-    const posAsTradeSizes = basePos / size;
-
-    if (posAsTradeSizes < 1 && bidPrice >= 0) {
       instructions.push(placeBidIx);
     }
-    if (posAsTradeSizes > -1) {
-      instructions.push(placeAskIx);
-    }
-
-    console.log(
-      `${perpMarketName} -`,
-      `Requoting sentBidPx: ${mc.sentBidPrice}`,
-      `newBidPx: ${bookAdjBid}`,
-      `sentAskPx: ${mc.sentAskPrice}`,
-      `newAskPx: ${bookAdjAsk}`,
-      `aggBid: ${aggBid}`,
-      `addAsk: ${aggAsk}`
-    );
-
-    const unsettledPnl = mangoAccount.perpPositionExistsForMarket(mc.perpMarket)
-      ? mangoAccount
-        .getPerpPosition(perpMarketIndex)!
-        .getUnsettledPnlUi(perpMarket)
-      : 0;
-
-    console.log(
-      `Health ratio ${mangoAccount
-        .getHealthRatio(group, HealthType.maint)
-        .toFixed(3)}, maint health ${toUiDecimalsForQuote(
-          mangoAccount.getHealth(group, HealthType.maint),
-        ).toFixed(3)}, account equity ${equity.toFixed(
-          3,
-        )}, base position ${Math.abs(basePos).toFixed(3)} ${basePos >= 0 ? 'LONG' : 'SHORT'
-      }, notional ${Math.abs(basePos * perpMarket.uiPrice).toFixed(
-        3,
-      )}, unsettled Pnl ${unsettledPnl.toFixed(3)}`,
-    );
-
-    mc.sentBidPrice = bookAdjBid.toNumber();
-    mc.sentAskPrice = bookAdjAsk.toNumber();
-    mc.lastOrderUpdate = getUnixTs();
-  } else {
-    console.log(
-      `Not requoting for market ${mc.perpMarket.name}. No need to move orders`,
-    );
-  }
-
-  instructions.push(
-    await client.healthRegionEndIx(group, mangoAccount, [], [perpMarket]),
-  );
-
-  // If instruction is only the sequence enforcement and health region ixs, then just send empty
-  if (instructions.length === 3) {
-    return [];
-  } else {
+    console.log(message);
     return instructions;
+  } else {
+    console.log(`Wash - Do nothing`);
+    return [];
   }
 }
 

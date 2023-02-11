@@ -4,7 +4,7 @@
     "assets": {
         "BTC": {
             "perp": {
-                "charge": 0.005,
+                "charge": 0.002,
                 "krakenCode": "XXBTZUSD"
             }
         }
