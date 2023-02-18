@@ -438,6 +438,11 @@ async function makeMarketUpdateInstructions(
 
       instructions.push(placeBidIx);
     }
+
+    instructions.push(
+      await client.healthRegionEndIx(group, mangoAccount, [], [perpMarket]),
+    );
+
     console.log(message);
     return instructions;
   } else {
