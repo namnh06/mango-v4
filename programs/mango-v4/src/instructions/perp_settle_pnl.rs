@@ -2,58 +2,12 @@ use anchor_lang::prelude::*;
 use checked_math as cm;
 use fixed::types::I80F48;
 
+use crate::accounts_ix::*;
 use crate::accounts_zerocopy::*;
 use crate::error::*;
 use crate::health::{new_health_cache, HealthType, ScanningAccountRetriever};
 use crate::logs::{emit_perp_balances, PerpSettlePnlLog, TokenBalanceLog};
-use crate::state::Bank;
-use crate::state::IxGate;
-use crate::state::{Group, MangoAccountFixed, MangoAccountLoader, PerpMarket};
-
-#[derive(Accounts)]
-pub struct PerpSettlePnl<'info> {
-    #[account(
-        constraint = group.load()?.is_ix_enabled(IxGate::PerpSettlePnl) @ MangoError::IxIsDisabled,
-    )]
-    pub group: AccountLoader<'info, Group>,
-
-    #[account(
-        mut,
-        has_one = group,
-        constraint = settler.load()?.is_operational() @ MangoError::AccountIsFrozen
-        // settler_owner is checked at #1
-    )]
-    pub settler: AccountLoader<'info, MangoAccountFixed>,
-    pub settler_owner: Signer<'info>,
-
-    #[account(has_one = group, has_one = oracle)]
-    pub perp_market: AccountLoader<'info, PerpMarket>,
-
-    // This account MUST be profitable
-    #[account(mut,
-        has_one = group,
-        constraint = account_a.load()?.is_operational() @ MangoError::AccountIsFrozen
-    )]
-    pub account_a: AccountLoader<'info, MangoAccountFixed>,
-    // This account MUST have a loss
-    #[account(
-        mut,
-        has_one = group,
-        constraint = account_b.load()?.is_operational() @ MangoError::AccountIsFrozen
-    )]
-    pub account_b: AccountLoader<'info, MangoAccountFixed>,
-
-    /// CHECK: Oracle can have different account types, constrained by address in perp_market
-    pub oracle: UncheckedAccount<'info>,
-
-    // bank correctness is checked at #2
-    #[account(mut, has_one = group)]
-    pub settle_bank: AccountLoader<'info, Bank>,
-
-    /// CHECK: Oracle can have different account types
-    #[account(address = settle_bank.load()?.oracle)]
-    pub settle_oracle: UncheckedAccount<'info>,
-}
+use crate::state::*;
 
 pub fn perp_settle_pnl(ctx: Context<PerpSettlePnl>) -> Result<()> {
     // Cannot settle with yourself
@@ -181,7 +135,7 @@ pub fn perp_settle_pnl(ctx: Context<PerpSettlePnl>) -> Result<()> {
         b_settle_health,
     );
 
-    let fee = compute_settle_fee(&perp_market, a_liq_end_health, a_maint_health, settlement)?;
+    let fee = perp_market.compute_settle_fee(settlement, a_liq_end_health, a_maint_health)?;
 
     a_perp_position.record_settle(settlement);
     b_perp_position.record_settle(-settlement);
@@ -281,44 +235,4 @@ pub fn perp_settle_pnl(ctx: Context<PerpSettlePnl>) -> Result<()> {
 
     msg!("settled pnl = {}, fee = {}", settlement, fee);
     Ok(())
-}
-
-pub fn compute_settle_fee(
-    perp_market: &PerpMarket,
-    source_liq_end_health: I80F48,
-    source_maint_health: I80F48,
-    settlement: I80F48,
-) -> Result<I80F48> {
-    assert!(source_maint_health >= source_liq_end_health);
-
-    // A percentage fee is paid to the settler when the source account's health is low.
-    // That's because the settlement could avoid it getting liquidated: settling will
-    // increase its health by actualizing positive perp pnl.
-    let low_health_fee = if source_liq_end_health < 0 {
-        let fee_fraction = I80F48::from_num(perp_market.settle_fee_fraction_low_health);
-        if source_maint_health < 0 {
-            cm!(settlement * fee_fraction)
-        } else {
-            cm!(settlement
-                * fee_fraction
-                * (-source_liq_end_health / (source_maint_health - source_liq_end_health)))
-        }
-    } else {
-        I80F48::ZERO
-    };
-
-    // The settler receives a flat fee
-    let flat_fee = I80F48::from_num(perp_market.settle_fee_flat);
-
-    // Fees only apply when the settlement is large enough
-    let fee = if settlement >= perp_market.settle_fee_amount_threshold {
-        cm!(low_health_fee + flat_fee).min(settlement)
-    } else {
-        I80F48::ZERO
-    };
-
-    // Safety check to prevent any accidental negative transfer
-    require!(fee >= 0, MangoError::SettlementAmountMustBePositive);
-
-    Ok(fee)
 }

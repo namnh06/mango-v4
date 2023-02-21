@@ -2,25 +2,8 @@ use crate::{accounts_zerocopy::AccountInfoRef, error::MangoError, state::*};
 use anchor_lang::prelude::*;
 use fixed::types::I80F48;
 
+use crate::accounts_ix::*;
 use crate::logs::PerpMarketMetaDataLog;
-
-#[derive(Accounts)]
-pub struct PerpEditMarket<'info> {
-    pub group: AccountLoader<'info, Group>,
-    // group <-> admin relation is checked at #1
-    pub admin: Signer<'info>,
-
-    #[account(
-        mut,
-        has_one = group
-    )]
-    pub perp_market: AccountLoader<'info, PerpMarket>,
-
-    /// The oracle account is optional and only used when reset_stable_price is set.
-    ///
-    /// CHECK: The oracle can be one of several different account types
-    pub oracle: UncheckedAccount<'info>,
-}
 
 #[allow(clippy::too_many_arguments)]
 pub fn perp_edit_market(
@@ -109,13 +92,8 @@ pub fn perp_edit_market(
             MangoError::InitAssetWeightCantBeNegative
         );
 
-        let old_init_base_asset_weight = perp_market.init_base_asset_weight;
         perp_market.init_base_asset_weight = I80F48::from_num(init_base_asset_weight);
-
-        // security admin can only reduce init_base_asset_weight
-        if old_init_base_asset_weight < perp_market.init_base_asset_weight {
-            require_group_admin = true;
-        }
+        require_group_admin = true;
     }
     if let Some(maint_base_liab_weight) = maint_base_liab_weight_opt {
         msg!(

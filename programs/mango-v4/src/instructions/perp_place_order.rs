@@ -1,50 +1,10 @@
 use anchor_lang::prelude::*;
 
+use crate::accounts_ix::*;
 use crate::accounts_zerocopy::*;
 use crate::error::*;
 use crate::health::{new_fixed_order_account_retriever, new_health_cache};
-use crate::state::IxGate;
-use crate::state::Side;
-use crate::state::{
-    BookSide, EventQueue, Group, MangoAccountFixed, MangoAccountLoader, Order, Orderbook,
-    PerpMarket,
-};
-
-#[derive(Accounts)]
-pub struct PerpPlaceOrder<'info> {
-    #[account(
-        constraint = group.load()?.is_ix_enabled(IxGate::PerpPlaceOrder) @ MangoError::IxIsDisabled,
-    )]
-    pub group: AccountLoader<'info, Group>,
-
-    #[account(
-        mut,
-        has_one = group,
-        constraint = account.load()?.is_operational() @ MangoError::AccountIsFrozen
-        // owner is checked at #1
-    )]
-    pub account: AccountLoader<'info, MangoAccountFixed>,
-    pub owner: Signer<'info>,
-
-    #[account(
-        mut,
-        has_one = group,
-        has_one = bids,
-        has_one = asks,
-        has_one = event_queue,
-        has_one = oracle,
-    )]
-    pub perp_market: AccountLoader<'info, PerpMarket>,
-    #[account(mut)]
-    pub bids: AccountLoader<'info, BookSide>,
-    #[account(mut)]
-    pub asks: AccountLoader<'info, BookSide>,
-    #[account(mut)]
-    pub event_queue: AccountLoader<'info, EventQueue>,
-
-    /// CHECK: The oracle can be one of several different account types and the pubkey is checked above
-    pub oracle: UncheckedAccount<'info>,
-}
+use crate::state::*;
 
 // TODO
 #[allow(clippy::too_many_arguments)]
@@ -127,22 +87,27 @@ pub fn perp_place_order(
     let pp = account.perp_position(perp_market_index)?;
     let effective_pos = pp.effective_base_position_lots();
     let max_base_lots = if order.reduce_only || perp_market.is_reduce_only() {
-        if (order.side == Side::Bid && effective_pos >= 0)
-            || (order.side == Side::Ask && effective_pos <= 0)
-        {
-            0
-        } else if order.side == Side::Bid {
+        let allowed_base_lots = if order.side == Side::Bid {
             // ignores open asks
-            (effective_pos + pp.bids_base_lots)
-                .min(0)
-                .abs()
-                .min(order.max_base_lots)
+            msg!(
+                "reduce only: effective base position incl open bids is {} lots",
+                effective_pos + pp.bids_base_lots
+            );
+            (effective_pos + pp.bids_base_lots).min(0).abs()
         } else {
             // ignores open bids
-            (effective_pos - pp.asks_base_lots)
-                .max(0)
-                .min(order.max_base_lots)
-        }
+            msg!(
+                "reduce only: effective base position incl open asks is {} lots",
+                effective_pos - pp.asks_base_lots
+            );
+            (effective_pos - pp.asks_base_lots).max(0)
+        };
+        msg!(
+            "max allowed {:?}: {} base lots",
+            order.side,
+            allowed_base_lots
+        );
+        allowed_base_lots.min(order.max_base_lots)
     } else {
         order.max_base_lots
     };
