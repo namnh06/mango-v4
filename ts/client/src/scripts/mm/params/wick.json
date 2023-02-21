@@ -1,5 +1,5 @@
 {
-  "interval": 10000,
+  "interval": 15000,
   "batch": 1,
   "tif": 45,
   "assets": {
