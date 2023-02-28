@@ -363,9 +363,6 @@ async function makeMarketUpdateInstructions(
     : 0;
 
   if (basePos !== 0) {
-    const bids = mc.bids;
-    const asks = mc.asks;
-
     // Start building the transaction
     const instructions: TransactionInstruction[] = [
       makeCheckAndSetSequenceNumberIx(
@@ -379,6 +376,14 @@ async function makeMarketUpdateInstructions(
     instructions.push(
       await client.healthRegionBeginIx(group, mangoAccount, [], [perpMarket]),
     );
+
+    const cancelAllIx = await client.perpCancelAllOrdersIx(
+      group,
+      mangoAccount,
+      perpMarketIndex,
+      10,
+    );
+    instructions.push(cancelAllIx);
 
     const charge: number = (mc.params.charge || 0.002);
     if (charge >= 0.01) {
@@ -411,14 +416,12 @@ async function makeMarketUpdateInstructions(
       message += `\nSelling ...`;
       message += `\nWash Trade - IOC selling for size: ${takerSize}, at price: ${bidAcceptablePrice} `;
 
-      console.log(message);
       instructions.push(placeAskIx);
     } else if (basePos < 0) {
       const askAcceptablePrice = fairValue * (1 + charge);
       const modelAskPrice = perpMarket.uiPriceToLots(askAcceptablePrice);
       const takerSize: number = Math.abs(basePos);
       const nativeAskSize = perpMarket.uiBaseToLots(takerSize);
-
 
       const placeBidIx = await client.perpPlaceOrderIx(
         group,
