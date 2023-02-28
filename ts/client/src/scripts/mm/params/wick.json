@@ -5,8 +5,7 @@
   "assets": {
     "BTC": {
       "perp": {
-        "equity": 60,
-        "sizePerc": 1,
+        "equity": 100,
         "bidCharge": 0.018,
         "askCharge": 0.018,
         "requoteThresh": 0.002,
