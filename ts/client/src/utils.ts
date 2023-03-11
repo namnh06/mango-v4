@@ -1,8 +1,5 @@
-import { AnchorProvider } from '@project-serum/anchor';
-import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
-} from '@solana/spl-token';
+import { AnchorProvider } from '@coral-xyz/anchor';
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from './utils/spl';
 import {
   AddressLookupTableAccount,
   MessageV0,
@@ -13,7 +10,6 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js';
 import BN from 'bn.js';
-import { QUOTE_DECIMALS } from './accounts/bank';
 import { I80F48 } from './numbers/I80F48';
 
 ///
@@ -21,6 +17,14 @@ import { I80F48 } from './numbers/I80F48';
 ///
 export const U64_MAX_BN = new BN('18446744073709551615');
 export const I64_MAX_BN = new BN('9223372036854775807').toTwos(64);
+
+export function bpsToDecimal(bps: number): number {
+  return bps / 1000;
+}
+
+export function percentageToDecimal(percentage: number): number {
+  return percentage / 100;
+}
 
 export function toNativeI80F48ForQuote(uiAmount: number): I80F48 {
   return I80F48.fromNumber(uiAmount * Math.pow(10, 6));
@@ -49,6 +53,8 @@ export function toUiDecimals(
   }
   return nativeAmount / Math.pow(10, decimals);
 }
+
+export const QUOTE_DECIMALS = 6;
 
 export function toUiDecimalsForQuote(
   nativeAmount: BN | I80F48 | number,

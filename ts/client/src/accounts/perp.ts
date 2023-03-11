@@ -1,16 +1,21 @@
-import { BN } from '@project-serum/anchor';
-import { utf8 } from '@project-serum/anchor/dist/cjs/utils/bytes';
+import { BN } from '@coral-xyz/anchor';
+import { utf8 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
 import { PublicKey } from '@solana/web3.js';
 import Big from 'big.js';
 import { MangoClient } from '../client';
 import { RUST_U64_MAX } from '../constants';
 import { I80F48, I80F48Dto, ZERO_I80F48 } from '../numbers/I80F48';
 import { Modify } from '../types';
-import { As, U64_MAX_BN, toNative, toUiDecimals } from '../utils';
+import {
+  As,
+  QUOTE_DECIMALS,
+  U64_MAX_BN,
+  toNative,
+  toUiDecimals,
+} from '../utils';
 import {
   OracleConfig,
   OracleConfigDto,
-  QUOTE_DECIMALS,
   StablePriceModel,
   TokenIndex,
 } from './bank';
@@ -45,17 +50,17 @@ export class PerpMarket {
   public feesSettled: I80F48;
   public maintOverallAssetWeight: I80F48;
   public initOverallAssetWeight: I80F48;
+  public positivePnlLiquidationFee: I80F48;
 
   public _price: I80F48;
   public _uiPrice: number;
   public _oracleLastUpdatedSlot: number;
+  public _bids: BookSide;
+  public _asks: BookSide;
 
   private priceLotsToUiConverter: number;
   private baseLotsToUiConverter: number;
   private quoteLotsToUiConverter: number;
-
-  private _bids: BookSide;
-  private _asks: BookSide;
 
   static from(
     publicKey: PublicKey,
@@ -216,6 +221,7 @@ export class PerpMarket {
     this.feesSettled = I80F48.from(feesSettled);
     this.maintOverallAssetWeight = I80F48.from(maintOverallAssetWeight);
     this.initOverallAssetWeight = I80F48.from(initOverallAssetWeight);
+    this.positivePnlLiquidationFee = I80F48.from(positivePnlLiquidationFee);
 
     this.priceLotsToUiConverter = new Big(10)
       .pow(baseDecimals - QUOTE_DECIMALS)
@@ -308,7 +314,7 @@ export class PerpMarket {
   public async loadFills(
     client: MangoClient,
     lastSeqNum: BN = new BN(0),
-  ): Promise<(OutEvent | FillEvent | LiquidateEvent)[]> {
+  ): Promise<FillEvent[]> {
     const eventQueue = await this.loadEventQueue(client);
     return eventQueue
       .eventsSince(lastSeqNum)
@@ -683,7 +689,7 @@ export class BookSide {
           this.perpMarket,
           leafNode,
           this.type,
-          now.lt(expiryTimestamp),
+          now.gt(expiryTimestamp),
         );
       }
     }
@@ -713,7 +719,7 @@ export class BookSide {
           this.perpMarket,
           leafNode,
           this.type,
-          now.lt(expiryTimestamp),
+          now.gt(expiryTimestamp),
           true,
         );
       }
@@ -1022,8 +1028,8 @@ export interface FillEvent extends Event {
   takerOrderId: BN;
   takerClientOrderId: BN;
   takerFee: number;
-  price: BN;
-  quantity: BN;
+  price: number;
+  quantity: number;
 }
 
 export interface LiquidateEvent extends Event {
