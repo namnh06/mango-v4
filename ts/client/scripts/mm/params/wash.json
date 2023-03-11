@@ -1,0 +1,18 @@
+{
+    "interval": 60000,
+    "batch": 6,
+    "assets": {
+        "BTC": {
+            "perp": {
+                "charge": 0.002,
+                "krakenCode": "XXBTZUSD"
+            }
+        },
+        "SOL": {
+            "perp": {
+                "charge": 0.004,
+                "krakenCode": "SOLUSD"
+            }
+        }
+    }
+}

@@ -198,7 +198,6 @@ pub struct Serum3OpenOrdersBalanceLog {
     pub quote_token_index: u16,
     pub base_total: u64,
     pub base_free: u64,
-    /// this field does not include the referrer_rebates; need to add that in to get true total
     pub quote_total: u64,
     pub quote_free: u64,
     pub referrer_rebates_accrued: u64,
@@ -213,7 +212,6 @@ pub struct Serum3OpenOrdersBalanceLogV2 {
     pub quote_token_index: u16,
     pub base_total: u64,
     pub base_free: u64,
-    /// this field does not include the referrer_rebates; need to add that in to get true total
     pub quote_total: u64,
     pub quote_free: u64,
     pub referrer_rebates_accrued: u64,
@@ -361,4 +359,14 @@ pub struct PerpSettleFeesLog {
     pub mango_account: Pubkey,
     pub perp_market_index: u16,
     pub settlement: i128,
+}
+
+#[event]
+pub struct AccountBuybackFeesWithMngoLog {
+    pub mango_group: Pubkey,
+    pub mango_account: Pubkey,
+    pub buyback_fees: i128,
+    pub buyback_mngo: i128,
+    pub mngo_buyback_price: i128,
+    pub oracle_price: i128,
 }

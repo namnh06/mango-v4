@@ -1,10 +1,8 @@
-import { AnchorProvider, BN, Program, Provider } from '@project-serum/anchor';
+import { AnchorProvider, BN, Program, Provider } from '@coral-xyz/anchor';
 import {
-  WRAPPED_SOL_MINT,
-  closeAccount,
-  initializeAccount,
-} from '@project-serum/serum/lib/token-instructions';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+  createCloseAccountInstruction,
+  createInitializeAccount3Instruction,
+} from '@solana/spl-token';
 import {
   AccountMeta,
   AddressLookupTableAccount,
@@ -65,6 +63,7 @@ import {
   toNative,
 } from './utils';
 import { sendTransaction } from './utils/rpc';
+import { NATIVE_MINT, TOKEN_PROGRAM_ID } from './utils/spl';
 
 export enum AccountRetriever {
   Scanning,
@@ -78,6 +77,7 @@ export type MangoClientOptions = {
   postSendTxCallback?: ({ txid }: { txid: string }) => void;
   prioritizationFee?: number;
   txConfirmationCommitment?: Commitment;
+  openbookFeesToDao?: boolean;
 };
 
 export class MangoClient {
@@ -85,6 +85,7 @@ export class MangoClient {
   private postSendTxCallback?: ({ txid }) => void;
   private prioritizationFee: number;
   private txConfirmationCommitment: Commitment;
+  private openbookFeesToDao: boolean;
 
   constructor(
     public program: Program<MangoV4>,
@@ -95,6 +96,7 @@ export class MangoClient {
     this.idsSource = opts?.idsSource || 'get-program-accounts';
     this.prioritizationFee = opts?.prioritizationFee || 0;
     this.postSendTxCallback = opts?.postSendTxCallback;
+    this.openbookFeesToDao = opts?.openbookFeesToDao ?? true;
     this.txConfirmationCommitment =
       opts?.txConfirmationCommitment ??
       (program.provider as AnchorProvider).opts.commitment ??
@@ -159,6 +161,11 @@ export class MangoClient {
     testing?: number,
     version?: number,
     depositLimitQuote?: BN,
+    feesPayWithMngo?: boolean,
+    feesMngoBonusRate?: number,
+    feesSwapMangoAccount?: PublicKey,
+    feesMngoTokenIndex?: TokenIndex,
+    feesExpiryInterval?: BN,
   ): Promise<TransactionSignature> {
     const ix = await this.program.methods
       .groupEdit(
@@ -168,6 +175,11 @@ export class MangoClient {
         testing ?? null,
         version ?? null,
         depositLimitQuote !== undefined ? depositLimitQuote : null,
+        feesPayWithMngo ?? null,
+        feesMngoBonusRate ?? null,
+        feesSwapMangoAccount ?? null,
+        feesMngoTokenIndex ?? null,
+        feesExpiryInterval ?? null,
       )
       .accounts({
         group: group.publicKey,
@@ -329,8 +341,7 @@ export class MangoClient {
       .tokenRegisterTrustless(tokenIndex, name)
       .accounts({
         group: group.publicKey,
-        fastListingAdmin: (this.program.provider as AnchorProvider).wallet
-          .publicKey,
+        admin: (this.program.provider as AnchorProvider).wallet.publicKey,
         mint: mintPk,
         oracle: oraclePk,
         payer: (this.program.provider as AnchorProvider).wallet.publicKey,
@@ -376,6 +387,7 @@ export class MangoClient {
         params.resetStablePrice ?? false,
         params.resetNetBorrowLimit ?? false,
         params.reduceOnly,
+        params.name,
       )
       .accounts({
         group: group.publicKey,
@@ -984,6 +996,39 @@ export class MangoClient {
     return await this.sendAndConfirmTransactionForGroup(group, instructions);
   }
 
+  public async accountBuybackFeesWithMngoIx(
+    group: Group,
+    mangoAccount: MangoAccount,
+    maxBuyback?: number,
+  ): Promise<TransactionInstruction> {
+    maxBuyback = maxBuyback ?? mangoAccount.getMaxFeesBuybackUi(group);
+    return await this.program.methods
+      .accountBuybackFeesWithMngo(new BN(maxBuyback))
+      .accounts({
+        group: group.publicKey,
+        account: mangoAccount.publicKey,
+        daoAccount: group.buybackFeesSwapMangoAccount,
+        mngoBank: group.getFirstBankForMngo().publicKey,
+        mngoOracle: group.getFirstBankForMngo().oracle,
+        feesBank: group.getFirstBankByTokenIndex(0 as TokenIndex).publicKey,
+        feesOracle: group.getFirstBankByTokenIndex(0 as TokenIndex).oracle,
+      })
+      .instruction();
+  }
+
+  public async accountBuybackFeesWithMngo(
+    group: Group,
+    mangoAccount: MangoAccount,
+    maxBuyback?: number,
+  ): Promise<TransactionSignature> {
+    const ix = await this.accountBuybackFeesWithMngoIx(
+      group,
+      mangoAccount,
+      maxBuyback,
+    );
+    return await this.sendAndConfirmTransactionForGroup(group, [ix]);
+  }
+
   public async tokenDeposit(
     group: Group,
     mangoAccount: MangoAccount,
@@ -1020,7 +1065,7 @@ export class MangoClient {
     let preInstructions: TransactionInstruction[] = [];
     let postInstructions: TransactionInstruction[] = [];
     const additionalSigners: Signer[] = [];
-    if (mintPk.equals(WRAPPED_SOL_MINT)) {
+    if (mintPk.equals(NATIVE_MINT)) {
       wrappedSolAccount = new Keypair();
       const lamports = nativeAmount.add(new BN(1e7));
 
@@ -1032,18 +1077,18 @@ export class MangoClient {
           space: 165,
           programId: TOKEN_PROGRAM_ID,
         }),
-        initializeAccount({
-          account: wrappedSolAccount.publicKey,
-          mint: WRAPPED_SOL_MINT,
-          owner: mangoAccount.owner,
-        }),
+        createInitializeAccount3Instruction(
+          wrappedSolAccount.publicKey,
+          NATIVE_MINT,
+          mangoAccount.owner,
+        ),
       ];
       postInstructions = [
-        closeAccount({
-          source: wrappedSolAccount.publicKey,
-          destination: mangoAccount.owner,
-          owner: mangoAccount.owner,
-        }),
+        createCloseAccountInstruction(
+          wrappedSolAccount.publicKey,
+          mangoAccount.owner,
+          mangoAccount.owner,
+        ),
       ];
       additionalSigners.push(wrappedSolAccount);
     }
@@ -1128,13 +1173,13 @@ export class MangoClient {
     ];
 
     const postInstructions: TransactionInstruction[] = [];
-    if (mintPk.equals(WRAPPED_SOL_MINT)) {
+    if (mintPk.equals(NATIVE_MINT)) {
       postInstructions.push(
-        closeAccount({
-          source: tokenAccountPk,
-          destination: mangoAccount.owner,
-          owner: mangoAccount.owner,
-        }),
+        createCloseAccountInstruction(
+          tokenAccountPk,
+          mangoAccount.owner,
+          mangoAccount.owner,
+        ),
       );
     }
 
@@ -1596,6 +1641,12 @@ export class MangoClient {
     mangoAccount: MangoAccount,
     externalMarketPk: PublicKey,
   ): Promise<TransactionInstruction> {
+    if (this.openbookFeesToDao == false) {
+      throw new Error(
+        `openbookFeesToDao is set to false, please use serum3SettleFundsV2Ix`,
+      );
+    }
+
     const serum3Market = group.serum3MarketsMapByExternal.get(
       externalMarketPk.toBase58(),
     )!;
@@ -1640,12 +1691,73 @@ export class MangoClient {
     return ix;
   }
 
+  public async serum3SettleFundsV2Ix(
+    group: Group,
+    mangoAccount: MangoAccount,
+    externalMarketPk: PublicKey,
+  ): Promise<TransactionInstruction> {
+    const serum3Market = group.serum3MarketsMapByExternal.get(
+      externalMarketPk.toBase58(),
+    )!;
+    const serum3MarketExternal = group.serum3ExternalMarketsMap.get(
+      externalMarketPk.toBase58(),
+    )!;
+
+    const [serum3MarketExternalVaultSigner, openOrderPublicKey] =
+      await Promise.all([
+        generateSerum3MarketExternalVaultSignerAddress(
+          this.cluster,
+          serum3Market,
+          serum3MarketExternal,
+        ),
+        serum3Market.findOoPda(this.program.programId, mangoAccount.publicKey),
+      ]);
+
+    const ix = await this.program.methods
+      .serum3SettleFundsV2(this.openbookFeesToDao)
+      .accounts({
+        v1: {
+          group: group.publicKey,
+          account: mangoAccount.publicKey,
+          owner: (this.program.provider as AnchorProvider).wallet.publicKey,
+          openOrders: openOrderPublicKey,
+          serumMarket: serum3Market.publicKey,
+          serumProgram: OPENBOOK_PROGRAM_ID[this.cluster],
+          serumMarketExternal: serum3Market.serumMarketExternal,
+          marketBaseVault: serum3MarketExternal.decoded.baseVault,
+          marketQuoteVault: serum3MarketExternal.decoded.quoteVault,
+          marketVaultSigner: serum3MarketExternalVaultSigner,
+          quoteBank: group.getFirstBankByTokenIndex(
+            serum3Market.quoteTokenIndex,
+          ).publicKey,
+          quoteVault: group.getFirstBankByTokenIndex(
+            serum3Market.quoteTokenIndex,
+          ).vault,
+          baseBank: group.getFirstBankByTokenIndex(serum3Market.baseTokenIndex)
+            .publicKey,
+          baseVault: group.getFirstBankByTokenIndex(serum3Market.baseTokenIndex)
+            .vault,
+        },
+        v2: {
+          quoteOracle: group.getFirstBankByTokenIndex(
+            serum3Market.quoteTokenIndex,
+          ).oracle,
+          baseOracle: group.getFirstBankByTokenIndex(
+            serum3Market.baseTokenIndex,
+          ).oracle,
+        },
+      })
+      .instruction();
+
+    return ix;
+  }
+
   public async serum3SettleFunds(
     group: Group,
     mangoAccount: MangoAccount,
     externalMarketPk: PublicKey,
   ): Promise<TransactionSignature> {
-    const ix = await this.serum3SettleFundsIx(
+    const ix = await this.serum3SettleFundsV2Ix(
       group,
       mangoAccount,
       externalMarketPk,
@@ -1703,7 +1815,7 @@ export class MangoClient {
         side,
         orderId,
       ),
-      this.serum3SettleFundsIx(group, mangoAccount, externalMarketPk),
+      this.serum3SettleFundsV2Ix(group, mangoAccount, externalMarketPk),
     ]);
 
     return await this.sendAndConfirmTransactionForGroup(group, ixes);
@@ -1875,6 +1987,7 @@ export class MangoClient {
         params.reduceOnly,
         params.resetStablePrice ?? false,
         params.positivePnlLiquidationFee,
+        params.name,
       )
       .accounts({
         group: group.publicKey,
@@ -2026,7 +2139,7 @@ export class MangoClient {
         group,
         [mangoAccount],
         // Settlement token bank, because a position for it may be created
-        [group.getFirstBankByTokenIndex(0 as TokenIndex)],
+        [group.getFirstBankForPerpSettlement()],
         [perpMarket],
       );
     return await this.program.methods
@@ -2118,7 +2231,7 @@ export class MangoClient {
         group,
         [mangoAccount],
         // Settlement token bank, because a position for it may be created
-        [group.getFirstBankByTokenIndex(0 as TokenIndex)],
+        [group.getFirstBankForPerpSettlement()],
         [perpMarket],
       );
     return await this.program.methods
@@ -2241,7 +2354,7 @@ export class MangoClient {
         AccountRetriever.Scanning,
         group,
         [profitableAccount, unprofitableAccount],
-        [group.getFirstBankByTokenIndex(0 as TokenIndex)],
+        [group.getFirstBankForPerpSettlement()],
         [perpMarket],
       );
     const bank = group.banksMapByTokenIndex.get(0 as TokenIndex)![0];
@@ -2282,7 +2395,7 @@ export class MangoClient {
         AccountRetriever.Fixed,
         group,
         [account], // Account must be unprofitable
-        [group.getFirstBankByTokenIndex(0 as TokenIndex)],
+        [group.getFirstBankForPerpSettlement()],
         [perpMarket],
       );
     const bank = group.banksMapByTokenIndex.get(0 as TokenIndex)![0];
@@ -2993,7 +3106,7 @@ export class MangoClient {
         side,
         orderId,
       ),
-      this.serum3SettleFundsIx(group, mangoAccount, externalMarketPk),
+      this.serum3SettleFundsV2Ix(group, mangoAccount, externalMarketPk),
       this.serum3PlaceOrderIx(
         group,
         mangoAccount,

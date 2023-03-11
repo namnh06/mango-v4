@@ -1,0 +1,25 @@
+{
+  "interval": 10000,
+  "batch": 1,
+  "tif": 45,
+  "assets": {
+    "BTC": {
+      "perp": {
+        "equity": 100,
+        "bidCharge": 0.018,
+        "askCharge": 0.018,
+        "requoteThresh": 0.002,
+        "krakenCode": "XXBTZUSD"
+      }
+    },
+    "SOL": {
+      "perp": {
+        "equity": 100,
+        "bidCharge": 0.021,
+        "askCharge": 0.021,
+        "requoteThresh": 0.005,
+        "krakenCode": "SOLUSD"
+      }
+    }
+  }
+}
