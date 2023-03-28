@@ -1,28 +1,42 @@
 {
-  "interval": 10000,
+  "interval": 1000,
   "oraclePegged": false,
   "batch": 1,
-  "tif": 45,
   "assets": {
     "BTC": {
       "perp": {
-        "equity": 20,
-        "sizePerc": 1,
-        "bidCharge": 0.01,
-        "askCharge": 0.01,
-        "requoteThresh": 0.002,
-        "krakenCode": "XXBTZUSD"
-      }
-    },
-    "SOL": {
-      "perp": {
-        "sizePerc": 1,
+        "sizePerc": 0.75,
         "leanCoeff": 0.00025,
         "bias": 0.0,
         "requoteThresh": 0.0002,
         "takeSpammers": true,
         "spammerCharge": 2,
+        "charge": 0.0017,
+        "krakenCode": "XXBTZUSD"
+      }
+    },
+    "SOL": {
+      "perp": {
+        "sizePerc": 0.75,
+        "leanCoeff": 0.00025,
+        "bias": 0.0,
+        "requoteThresh": 0.0002,
+        "takeSpammers": true,
+        "spammerCharge": 2,
+        "charge": 0.0017,
         "krakenCode": "SOLUSD"
+      }
+    },
+    "ETH": {
+      "perp": {
+        "sizePerc": 0.75,
+        "leanCoeff": 0.00025,
+        "bias": 0.0,
+        "requoteThresh": 0.0002,
+        "takeSpammers": true,
+        "spammerCharge": 2,
+        "charge": 0.0017,
+        "krakenCode": "XETHZUSD"
       }
     }
   }
