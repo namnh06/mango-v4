@@ -373,9 +373,10 @@ async function makeMarketUpdateInstructions(
       ),
     ];
 
-    instructions.push(
-      await client.healthRegionBeginIx(group, mangoAccount, [], [perpMarket]),
-    );
+    // Temporary: Health regions are currently disabled on mainnet for security reasons
+    //instructions.push(
+    //  await client.healthRegionBeginIx(group, mangoAccount, [], [perpMarket]),
+    //);
 
     const cancelAllIx = await client.perpCancelAllOrdersIx(
       group,
@@ -442,9 +443,10 @@ async function makeMarketUpdateInstructions(
       instructions.push(placeBidIx);
     }
 
-    instructions.push(
-      await client.healthRegionEndIx(group, mangoAccount, [], [perpMarket]),
-    );
+    // Temporary: Health regions are currently disabled on mainnet for security reasons
+    // instructions.push(
+    //   await client.healthRegionEndIx(group, mangoAccount, [], [perpMarket]),
+    // );
 
     console.log(message);
     return instructions;

@@ -5,7 +5,7 @@
   "assets": {
     "BTC": {
       "perp": {
-        "equity": 100,
+        "equity": 200,
         "bidCharge": 0.018,
         "askCharge": 0.018,
         "requoteThresh": 0.002,
@@ -14,11 +14,20 @@
     },
     "SOL": {
       "perp": {
-        "equity": 100,
+        "equity": 200,
         "bidCharge": 0.021,
         "askCharge": 0.021,
         "requoteThresh": 0.005,
         "krakenCode": "SOLUSD"
+      }
+    },
+    "ETH": {
+      "perp": {
+        "equity": 200,
+        "bidCharge": 0.021,
+        "askCharge": 0.021,
+        "requoteThresh": 0.005,
+        "krakenCode": "XETHZUSD"
       }
     }
   }
