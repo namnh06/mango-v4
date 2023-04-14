@@ -13,6 +13,12 @@
                 "charge": 0.004,
                 "krakenCode": "SOLUSD"
             }
+        },
+        "ETH": {
+            "perp": {
+                "charge": 0.004,
+                "krakenCode": "XETHZUSD"
+            }
         }
     }
 }
